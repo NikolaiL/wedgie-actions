@@ -28,6 +28,31 @@ test('browser transport uses another app namespace, handles split lines and phys
   assert.equal(closes, 1); assert.equal(signer.port, null);
 });
 
+test('a device-side disconnect closes the port so connect() starts fresh; fields cannot replace id or type', async (t) => {
+  let incoming, opens = 0, closes = 0;
+  const encoder = new TextEncoder();
+  const makePort = () => ({
+    readable: new ReadableStream({ start(controller) { incoming = controller; } }),
+    writable: new WritableStream({ write(bytes) {
+      const request = JSON.parse(new TextDecoder().decode(bytes));
+      incoming.enqueue(encoder.encode(JSON.stringify({ id: request.id, type: 'airlock_identity', protocol: 'airlock/v1', cert: 'public', echo: request.type }) + '\n'));
+    } }),
+    async open() { opens++; }, async close() { closes++; },
+  });
+  Object.defineProperty(navigator, 'serial', { configurable: true, value: { requestPort: async () => makePort() } });
+  t.after(() => delete navigator.serial);
+  const signer = new WedgieSigner('airlock');
+  await signer.connect();
+  incoming.close();
+  await signer.reading;
+  assert.equal(signer.port, null); assert.equal(signer.cert, null); assert.equal(closes, 1);
+  await signer.connect();
+  assert.equal(opens, 2); assert.equal(signer.cert, 'public');
+  assert.equal((await signer.request('airlock_ping', { id: 99, type: 'other' }, 500)).echo, 'airlock_ping');
+  await signer.disconnect();
+  assert.equal(closes, 2);
+});
+
 test('unknown app request closes the serial port and gives setup guidance', async (t) => {
   let incoming, closed = false;
   const port = {

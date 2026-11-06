@@ -32,7 +32,7 @@ export class WedgieSigner extends EventTarget {
   }
 
   async readLoop() {
-    const decoder = new TextDecoder(); let buffer = '';
+    const decoder = new TextDecoder(); let buffer = '', readError;
     try {
       while (true) {
         const { value, done } = await this.reader.read();
@@ -53,11 +53,14 @@ export class WedgieSigner extends EventTarget {
         }
         if (buffer.length > 8192) throw new Error('Device sent an oversized response.');
       }
-    } catch (error) { this.readError = error.message; }
+    } catch (error) { readError = error.message; }
     finally {
+      // Every way out of the loop (disconnect(), unplug, bad data) closes the port so connect() can start fresh.
       this.reader.releaseLock();
-      for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(this.readError || 'Wedgie disconnected.')); }
-      this.pending.clear(); this.cert = null;
+      for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(readError || 'Wedgie disconnected.')); }
+      this.pending.clear();
+      await this.port.close().catch(() => {});
+      this.port = null; this.reader = null; this.cert = null;
       this.dispatchEvent(new Event('disconnect'));
     }
   }
@@ -71,7 +74,7 @@ export class WedgieSigner extends EventTarget {
       this.pending.set(id, { resolve, reject, timer });
       void (async () => {
         const writer = this.port.writable.getWriter();
-        try { await writer.write(new TextEncoder().encode(JSON.stringify({ id, type, ...fields }) + '\n')); }
+        try { await writer.write(new TextEncoder().encode(JSON.stringify({ ...fields, id, type }) + '\n')); }
         finally { writer.releaseLock(); }
       })().catch((error) => { clearTimeout(timer); this.pending.delete(id); reject(error); });
     });
@@ -85,11 +88,8 @@ export class WedgieSigner extends EventTarget {
   }
 
   async disconnect() {
-    const port = this.port;
-    if (!port) return;
+    if (!this.port) return;
     await this.reader?.cancel().catch(() => {});
     await this.reading;
-    await port.close().catch(() => {});
-    this.port = null; this.reader = null; this.cert = null;
   }
 }
