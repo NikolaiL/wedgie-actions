@@ -168,9 +168,11 @@ test('unsolicited joystick input is validated and cannot complete a signing requ
   await signer.writing;
   send({type:'airlock_input',dx:1,dy:-1,scan:true});
   send({type:'airlock_input',dx:999,dy:0,scan:false});
+  for (const action of ['go', 'refuel', 'scavenge', 'info']) send({type:'airlock_input',dx:0,dy:0,scan:false,action});
+  send({type:'airlock_input',dx:0,dy:0,scan:false,action:'approve'});
   send({type:'another_input',dx:0,dy:0,scan:true});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.deepEqual(events,[{dx:1,dy:-1,scan:true}]);
+  assert.deepEqual(events,[{dx:1,dy:-1,scan:true}, ...['go','refuel','scavenge','info'].map(action=>({dx:0,dy:0,scan:false,action}))]);
   assert.equal(signer.pending.size,1);
   await signer.disconnect(); await signing;
 });

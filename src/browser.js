@@ -53,8 +53,10 @@ export class WedgieSigner extends EventTarget {
           let reply;
           try { reply = JSON.parse(line); } catch { continue; }
           if (reply.type === `${this.app}_input` && reply.id === undefined) {
-            if ([-1, 0, 1].includes(reply.dx) && [-1, 0, 1].includes(reply.dy) && typeof reply.scan === 'boolean') {
-              this.dispatchEvent(new CustomEvent('input', { detail: { dx: reply.dx, dy: reply.dy, scan: reply.scan } }));
+            if ([-1, 0, 1].includes(reply.dx) && [-1, 0, 1].includes(reply.dy) && typeof reply.scan === 'boolean' && (reply.action === undefined || ['go', 'refuel', 'scavenge', 'info'].includes(reply.action))) {
+              const detail = { dx: reply.dx, dy: reply.dy, scan: reply.scan };
+              if (reply.action !== undefined) detail.action = reply.action;
+              this.dispatchEvent(new CustomEvent('input', { detail }));
             }
             continue;
           }
