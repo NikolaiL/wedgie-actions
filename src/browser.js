@@ -52,6 +52,12 @@ export class WedgieSigner extends EventTarget {
           if (!line.startsWith('{') || line.length > 8192) continue;
           let reply;
           try { reply = JSON.parse(line); } catch { continue; }
+          if (reply.type === `${this.app}_input` && reply.id === undefined) {
+            if ([-1, 0, 1].includes(reply.dx) && [-1, 0, 1].includes(reply.dy) && typeof reply.scan === 'boolean') {
+              this.dispatchEvent(new CustomEvent('input', { detail: { dx: reply.dx, dy: reply.dy, scan: reply.scan } }));
+            }
+            continue;
+          }
           const pending = this.pending.get(reply.id);
           if (!pending) continue;
           clearTimeout(pending.timer); this.pending.delete(reply.id);

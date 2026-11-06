@@ -150,3 +150,27 @@ test('unknown app request closes the serial port and gives setup guidance', asyn
   await assert.rejects(new WedgieSigner('airlock').connect(), /Install the airlock app/);
   assert.equal(closed, true);
 });
+
+test('unsolicited joystick input is validated and cannot complete a signing request', async (t) => {
+  let incoming;
+  const send = value => incoming.enqueue(new TextEncoder().encode(JSON.stringify(value) + '\n'));
+  const port = {
+    readable: new ReadableStream({ start(c) { incoming = c; } }),
+    writable: new WritableStream({ write(bytes) { const {id,type}=JSON.parse(new TextDecoder().decode(bytes)); if(type==='airlock_hello')send({id,type:'airlock_identity',protocol:'airlock/v1',cert:'public'}); } }),
+    async open() {}, async close() {},
+  };
+  Object.defineProperty(navigator,'serial',{configurable:true,value:{requestPort:async()=>port}});
+  t.after(()=>delete navigator.serial);
+  const signer = new WedgieSigner('airlock'), events=[];
+  signer.addEventListener('input', event=>events.push(event.detail));
+  await signer.connect();
+  const signing = assert.rejects(signer.signAction({text:'pending'}), /disconnected/);
+  await signer.writing;
+  send({type:'airlock_input',dx:1,dy:-1,scan:true});
+  send({type:'airlock_input',dx:999,dy:0,scan:false});
+  send({type:'another_input',dx:0,dy:0,scan:true});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(events,[{dx:1,dy:-1,scan:true}]);
+  assert.equal(signer.pending.size,1);
+  await signer.disconnect(); await signing;
+});
