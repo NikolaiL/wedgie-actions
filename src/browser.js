@@ -8,6 +8,8 @@ export class WedgieSigner extends EventTarget {
     this.pending = new Map();
     this.nextId = 1;
     this.cert = null;
+    this.canCancel = false;
+    this.writing = Promise.resolve();
   }
 
   async connect() {
@@ -22,6 +24,7 @@ export class WedgieSigner extends EventTarget {
       const reply = await this.request(`${this.app}_hello`, {}, 8000);
       if (reply.protocol !== `${this.app}/v1` || !reply.cert) throw new Error(`Install the ${this.app} Wedgie app first.`);
       this.cert = reply.cert;
+      this.canCancel = reply.cancel === true;
     } catch (error) {
       await this.disconnect();
       if (/unknown type|unknown request|not handled/i.test(error.message)) {
@@ -60,23 +63,26 @@ export class WedgieSigner extends EventTarget {
       for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(readError || 'Wedgie disconnected.')); }
       this.pending.clear();
       await this.port.close().catch(() => {});
-      this.port = null; this.reader = null; this.cert = null;
+      this.port = null; this.reader = null; this.cert = null; this.canCancel = false;
       this.dispatchEvent(new Event('disconnect'));
     }
   }
 
   async request(type, fields = {}, timeout = 75_000) {
     if (!this.port?.writable) throw new Error('Connect your Wedgie first.');
-    if (this.pending.size) throw new Error('Finish the current device request first.');
+    const active = [...this.pending.values()];
+    if (active.length && !(type === `${this.app}_cancel` && active.length === 1 && active[0].type === `${this.app}_sign`)) throw new Error('Finish the current device request first.');
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('Device timed out. Reconnect it before trying again.')); }, timeout);
-      this.pending.set(id, { resolve, reject, timer });
-      void (async () => {
+      this.pending.set(id, { resolve, reject, timer, type });
+      this.writing = this.writing.catch(() => {}).then(async () => {
+        if (!this.pending.has(id)) return;
         const writer = this.port.writable.getWriter();
         try { await writer.write(new TextEncoder().encode(JSON.stringify({ ...fields, id, type }) + '\n')); }
         finally { writer.releaseLock(); }
-      })().catch((error) => { clearTimeout(timer); this.pending.delete(id); reject(error); });
+      });
+      void this.writing.catch((error) => { clearTimeout(timer); this.pending.delete(id); reject(error); });
     });
   }
 
@@ -85,6 +91,15 @@ export class WedgieSigner extends EventTarget {
     const reply = await this.request(`${this.app}_sign`, { text: challenge.text });
     if (reply.type !== `${this.app}_signature`) throw new Error('Unexpected signing response.');
     return { r: reply.r, s: reply.s };
+  }
+
+  async cancelAction() {
+    const active = [...this.pending.entries()].find(([, pending]) => pending.type === `${this.app}_sign`);
+    if (!active) return false;
+    if (!this.canCancel) throw new Error('Reinstall the updated Wedgie app to cancel its screen from the browser.');
+    const reply = await this.request(`${this.app}_cancel`, { request: active[0] }, 5000);
+    if (reply.type !== `${this.app}_cancelled` || typeof reply.cancelled !== 'boolean') throw new Error('Unexpected cancellation response.');
+    return reply.cancelled;
   }
 
   async disconnect() {

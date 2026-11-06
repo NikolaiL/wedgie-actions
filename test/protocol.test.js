@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { encodeAction } from '../src/protocol.js';
 
+test('device cancellation interrupts the prompt without synthesizing a green press or signing', () => {
+  assert.match(execFileSync('python3', ['test/cancel-device.py'], { cwd: new URL('..', import.meta.url), encoding: 'utf8' }), /cooperative cancellation OK/);
+});
+
 test('versioned action envelope is app-scoped and rejects ambiguous encodings', () => {
   assert.equal(encodeAction('airlock', { action: 'open', sequence: 3 }), 'airlock/v1\naction=open\nsequence=3');
   for (const app of ['', 'x', 'Other App', 'a\nb', 'a'.repeat(21)]) assert.throws(() => encodeAction(app, { action: 'open' }));

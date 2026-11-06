@@ -22,10 +22,12 @@ await signer.connect();                 // call from a click; opens the serial p
 const cert = signer.cert;               // public certificate, NOT yet proof of possession
 const proof = await signer.signAction(challenge); // { text } issued by your server
 // Send proof.r and proof.s back to the server that issued the challenge.
+// From a cancel button while signAction is pending:
+// await signer.cancelAction(); // true only after the device acknowledges cancellation
 await signer.disconnect();
 ```
 
-The matching device app must implement the [v1 wire protocol](PROTOCOL.md). Namespaces use the same 2–20 lowercase letters/digits/underscores as Wedgie modules. `request(type, fields, timeoutMs)` exposes the underlying JSON transport. Only one device request can be active at a time. Refusals, transport errors and timeouts reject the promise. `disconnect` events tell your UI to stop requesting signatures. Reconnect after a timed-out request; a late response is never accepted as a newer request.
+The matching device app must implement the [v1 wire protocol](PROTOCOL.md). Namespaces use the same 2–20 lowercase letters/digits/underscores as Wedgie modules. `request(type, fields, timeoutMs)` exposes the underlying JSON transport. Only one device request can be active at a time, except a cancellation targeting the pending signature. Apps that advertise `cancel: true` in their identity reply support `cancelAction()`: it returns whether the device dismissed that prompt. Older apps need reinstalling for remote cancellation. Always invalidate the server challenge too; a signature already produced cannot be recalled. Refusals, transport errors and timeouts reject the promise. `disconnect` events tell your UI to stop requesting signatures. Reconnect after a timed-out request; a late response is never accepted as a newer request.
 
 ## Server
 
@@ -49,7 +51,9 @@ trustM.signature(device, text, proof); // throws on an invalid signature
 
 - `decode_fields(text, app, names)`: strict ASCII envelope, namespace and field-order parsing. Your app must validate each field's meaning and allowed values.
 - `certificate_der(blob)`: remove the chip's certificate-object wrapper.
-- `confirm_action(chip, display, text, question, lines)`: real-button `ui.ask`, then SHA-256/factory-key signing; returns `{r,s}` or `None` after decline/timeout. Derive the question and lines from the validated action, never from separate host labels.
+- `confirm_action(chip, display, text, question, lines, cancelled=None)`: real-button `ui.ask`, then SHA-256/factory-key signing; returns `{r,s}` or `None` after decline/timeout. Derive the question and lines from the validated action, never from separate host labels.
+
+For cooperative cancellation, supply a `cancelled()` callback that polls your app’s USB reader, validates the target request ID and acknowledges the cancel command. It is checked during `ui.ask` and immediately before signing. The helper wraps physical-only keys; host messages can abort but can never approve.
 
 The helper does not generate, replace or lock keys. It uses `ui.ask`'s physical-only defaults. It does not make arbitrary raw-digest signing available over USB. See Starproof's device app for complete application-side validation and packaging.
 

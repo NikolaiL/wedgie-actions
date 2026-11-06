@@ -34,10 +34,31 @@ def certificate_der(blob):
     raise ValueError("cannot read chip certificate")
 
 
-def confirm_action(chip, display, text, question, lines):
+class _Cancelled(Exception):
+    pass
+
+
+class _CancellableKeys:
+    def __init__(self, cancelled):
+        import lcd
+        self.keys = lcd.Keys(physical=True)
+        self.cancelled = cancelled
+
+    def pressed(self):
+        if self.cancelled():
+            raise _Cancelled()
+        return self.keys.pressed()
+
+
+def confirm_action(chip, display, text, question, lines, cancelled=None):
     """Call only after your app validates text and derives question/lines from its decoded fields."""
     import ui
-    if not ui.ask(display, question, lines, yes="sign", no="decline", ms=60000):
+    try:
+        options = {} if cancelled is None else {"keys": _CancellableKeys(cancelled)}
+        approved = ui.ask(display, question, lines, yes="sign", no="decline", ms=60000, **options)
+    except _Cancelled:
+        return None
+    if not approved or (cancelled is not None and cancelled()):
         return None
     ui.progress("Signing action", "in the Trust M", bar=False)
     import hashlib

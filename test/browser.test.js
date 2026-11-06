@@ -2,6 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WedgieSigner } from '../src/browser.js';
 
+test('browser cancellation reaches the pending device request and a late proof cannot answer a new one', async (t) => {
+  let incoming;
+  const writes = [], encoder = new TextEncoder();
+  const reply = (value) => incoming.enqueue(encoder.encode(JSON.stringify(value) + '\n'));
+  const port = {
+    readable: new ReadableStream({ start(controller) { incoming = controller; } }),
+    writable: new WritableStream({ write(bytes) {
+      const request = JSON.parse(new TextDecoder().decode(bytes)); writes.push(request);
+      if (request.type === 'airlock_hello') reply({ id: request.id, type: 'airlock_identity', protocol: 'airlock/v1', cert: 'public', cancel: true });
+      if (request.type === 'airlock_cancel') {
+        reply({ id: request.id, type: 'airlock_cancelled', cancelled: true });
+        reply({ id: request.request, type: 'refused' });
+      }
+    } }),
+    async open() {}, async close() {},
+  };
+  Object.defineProperty(navigator, 'serial', { configurable: true, value: { requestPort: async () => port } });
+  t.after(() => delete navigator.serial);
+  const signer = new WedgieSigner('airlock');
+  await signer.connect();
+  assert.equal(await signer.cancelAction(), false);
+  const signing = assert.rejects(signer.signAction({ text: 'first' }), /Declined/);
+  // Cancel immediately, including while the first serial write is queued.
+  assert.equal(await signer.cancelAction(), true);
+  await signing;
+  const first = writes.find((value) => value.type === 'airlock_sign');
+  assert.equal(writes.find((value) => value.type === 'airlock_cancel').request, first.id);
+  reply({ id: first.id, type: 'airlock_signature', r: 'stale', s: 'stale' });
+  const next = signer.signAction({ text: 'second' });
+  await signer.writing;
+  reply({ id: writes.at(-1).id, type: 'airlock_signature', r: 'new', s: 'new' });
+  assert.deepEqual(await next, { r: 'new', s: 'new' });
+  await signer.disconnect();
+});
+
 test('browser transport uses another app namespace, handles split lines and physical refusal', async (t) => {
   let incoming, writes = [], opens = 0, closes = 0;
   const encoder = new TextEncoder();

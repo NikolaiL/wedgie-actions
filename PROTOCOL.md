@@ -13,6 +13,18 @@ The application namespace is its Wedgie module name (`mygame` below). The librar
 
 This is a formatting example, not a complete authorization schema. Refusals return `{"id":2,"type":"refused"}`. Errors return `{"id":2,"type":"error","error":"reason"}`. The factory key must sign SHA-256 of the exact UTF-8 text; allowed text is ASCII, so there is no encoding conversion. P-256 signatures are raw integer scalars, not DER-encoded signature blobs. Serial speed is 115200 baud.
 
+## Cooperative cancellation
+
+A device supporting remote dismissal adds `"cancel":true` to its identity reply. While waiting for physical approval it polls for:
+
+```json
+{"id":3,"type":"mygame_cancel","request":2}
+{"id":3,"type":"mygame_cancelled","cancelled":true}
+{"id":2,"type":"refused"}
+```
+
+Only an ID matching the active signing request can dismiss it; stale or idle cancellations acknowledge `cancelled:false`. Other commands must not execute inside a pending prompt. Keep `ui.ask` with physical-only keys and its settle delay; poll cooperatively through the helper’s `cancelled` callback. Never inject an approval key. The browser must also invalidate the server challenge. A cancel arriving after signing cannot undo that signature; it still prevents submission by the cancelling UI.
+
 ## Text envelope
 
 - Header `<app>/v1`, then `name=value` lines, no final newline.
