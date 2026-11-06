@@ -15,7 +15,7 @@ export class WedgieSigner extends EventTarget {
   async connect({ install, version } = {}) {
     if (!navigator.serial) throw new Error('Open this page in desktop Chrome or Edge to connect a Wedgie.');
     if (this.port) return;
-    const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x2e8a }] });
+    let port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x2e8a }] });
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         await port.open({ baudRate: 115200 });
@@ -32,7 +32,7 @@ export class WedgieSigner extends EventTarget {
       } catch (error) {
         await this.disconnect();
         const missing = error.installRequired || /unknown type|unknown request|not handled/i.test(error.message);
-        if (missing && install && attempt === 0) { await install(port); continue; }
+        if (missing && install && attempt === 0) { port = await install(port) || port; continue; }
         if (missing) throw new Error(`Install the ${this.app} app on your Wedgie first, then reconnect. Its current app is missing or outdated.`);
         throw error;
       }

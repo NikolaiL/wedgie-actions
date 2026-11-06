@@ -23,6 +23,35 @@ test('connect installs a missing app once and reuses the chosen port; refusal ne
   assert.equal(installs, 2); assert.equal(signer.port, null);
 });
 
+test('a restarting installer can return the same device on a replacement port without another picker', async (t) => {
+  let selections = 0, installs = 0;
+  const opened = [], closed = [];
+  function makePort(name, identity) {
+    let incoming;
+    return {
+      get readable() { return new ReadableStream({ start(c) { incoming = c; } }); },
+      writable: new WritableStream({ write(bytes) {
+        const { id } = JSON.parse(new TextDecoder().decode(bytes));
+        incoming.enqueue(new TextEncoder().encode(JSON.stringify({ id, ...identity }) + '\n'));
+      } }),
+      async open() { opened.push(name); }, async close() { closed.push(name); },
+    };
+  }
+  const before = makePort('before', { type: 'error', error: 'unknown type' });
+  const after = makePort('after', { type: 'airlock_identity', protocol: 'airlock/v1', cert: 'public', appVersion: '2' });
+  Object.defineProperty(navigator, 'serial', { configurable: true, value: { requestPort: async () => { selections++; return before; } } });
+  t.after(() => delete navigator.serial);
+  const signer = new WedgieSigner('airlock');
+  await signer.connect({ version: '2', install: async (port) => {
+    installs++; assert.equal(port, before); assert.equal(signer.port, null); return after;
+  } });
+  assert.equal(signer.port, after); assert.equal(signer.cert, 'public');
+  assert.equal(selections, 1); assert.equal(installs, 1);
+  assert.deepEqual(opened, ['before', 'after']);
+  await signer.disconnect();
+  assert.deepEqual(closed, ['before', 'after']);
+});
+
 test('browser cancellation reaches the pending device request and a late proof cannot answer a new one', async (t) => {
   let incoming;
   const writes = [], encoder = new TextEncoder();
