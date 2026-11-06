@@ -46,4 +46,3 @@ test('DER certificate wrappers are handled without trusting certificate names', 
   assert.throws(() => verifier.identity(root.raw.toString('hex')), /device certificate/);
   assert.throws(() => certificateFromHex('00'.repeat(300)), /decode/);
 });
-
