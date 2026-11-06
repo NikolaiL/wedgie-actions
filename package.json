@@ -1,0 +1,36 @@
+{
+  "name": "wedgie-actions",
+  "version": "0.1.0",
+  "description": "Web Serial and certified Trust M action signatures for Wedgie applications.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    "./browser": "./src/browser.js",
+    "./server": "./src/verifier.js",
+    "./protocol": "./src/protocol.js"
+  },
+  "files": [
+    "src/*.js",
+    "device/wedgie_actions.py",
+    "certs/*.crt",
+    "certs/README.md",
+    "README.md",
+    "PROTOCOL.md",
+    "THREAT_MODEL.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NikolaiL/wedgie-actions.git"
+  },
+  "homepage": "https://github.com/NikolaiL/wedgie-actions#readme",
+  "bugs": {
+    "url": "https://github.com/NikolaiL/wedgie-actions/issues"
+  },
+  "license": "MIT"
+}
