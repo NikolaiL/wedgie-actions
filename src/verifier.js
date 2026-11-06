@@ -26,7 +26,7 @@ export function certificateFromHex(hex) {
 }
 
 function validNow(cert, now) {
-  return Date.parse(cert.validFrom) <= now && now <= Date.parse(cert.validTo);
+  return cert.validFromDate <= now && now <= cert.validToDate;
 }
 
 // Tests supply an ephemeral PKI here. The HTTP server always uses the bundled production CAs.
