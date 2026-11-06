@@ -27,6 +27,8 @@ const proof = await signer.signAction(challenge); // { text } issued by your ser
 await signer.disconnect();
 ```
 
+`connect({ version, install })` optionally calls an app-owned `install(port)` callback once when the selected device lacks the expected app/version. The signer closes its transport before handing over the same authorized port, then reconnects and verifies the handshake. The callback must preserve the device’s physical installation approval; installation is never silently authorized by this library. A declined install is not retried.
+
 The matching device app must implement the [v1 wire protocol](PROTOCOL.md). Namespaces use the same 2–20 lowercase letters/digits/underscores as Wedgie modules. `request(type, fields, timeoutMs)` exposes the underlying JSON transport. Only one device request can be active at a time, except a cancellation targeting the pending signature. Apps that advertise `cancel: true` in their identity reply support `cancelAction()`: it returns whether the device dismissed that prompt. Older apps need reinstalling for remote cancellation. Always invalidate the server challenge too; a signature already produced cannot be recalled. Refusals, transport errors and timeouts reject the promise. `disconnect` events tell your UI to stop requesting signatures. Reconnect after a timed-out request; a late response is never accepted as a newer request.
 
 ## Server

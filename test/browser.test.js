@@ -2,6 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WedgieSigner } from '../src/browser.js';
 
+test('connect installs a missing app once and reuses the chosen port; refusal never retries installation', async (t) => {
+  let incoming, installed = false, installs = 0, selections = 0;
+  const port = {
+    get readable() { return new ReadableStream({ start(controller) { incoming = controller; } }); },
+    writable: new WritableStream({ write(bytes) {
+      const { id } = JSON.parse(new TextDecoder().decode(bytes));
+      incoming.enqueue(new TextEncoder().encode(JSON.stringify(installed ? { id, type: 'airlock_identity', protocol: 'airlock/v1', cert: 'public', appVersion: '2' } : { id, type: 'error', error: 'unknown type' }) + '\n'));
+    } }),
+    async open() {}, async close() {},
+  };
+  Object.defineProperty(navigator, 'serial', { configurable: true, value: { requestPort: async () => { selections++; return port; } } });
+  t.after(() => delete navigator.serial);
+  const signer = new WedgieSigner('airlock');
+  await signer.connect({ version: '2', install: async (chosen) => { assert.equal(chosen, port); assert.equal(signer.port, null); installed = true; installs++; } });
+  assert.equal(installs, 1); assert.equal(selections, 1); assert.equal(signer.cert, 'public');
+  await signer.disconnect();
+  installed = false;
+  await assert.rejects(signer.connect({ install: async () => { installs++; throw new Error('Declined installation'); } }), /Declined installation/);
+  assert.equal(installs, 2); assert.equal(signer.port, null);
+});
+
 test('browser cancellation reaches the pending device request and a late proof cannot answer a new one', async (t) => {
   let incoming;
   const writes = [], encoder = new TextEncoder();

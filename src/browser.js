@@ -12,25 +12,30 @@ export class WedgieSigner extends EventTarget {
     this.writing = Promise.resolve();
   }
 
-  async connect() {
+  async connect({ install, version } = {}) {
     if (!navigator.serial) throw new Error('Open this page in desktop Chrome or Edge to connect a Wedgie.');
     if (this.port) return;
     const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x2e8a }] });
-    await port.open({ baudRate: 115200 });
-    this.port = port;
-    this.reader = port.readable.getReader();
-    this.reading = this.readLoop();
-    try {
-      const reply = await this.request(`${this.app}_hello`, {}, 8000);
-      if (reply.protocol !== `${this.app}/v1` || !reply.cert) throw new Error(`Install the ${this.app} Wedgie app first.`);
-      this.cert = reply.cert;
-      this.canCancel = reply.cancel === true;
-    } catch (error) {
-      await this.disconnect();
-      if (/unknown type|unknown request|not handled/i.test(error.message)) {
-        throw new Error(`Install the ${this.app} app on your Wedgie first, then reconnect. Its current app does not recognize these requests.`);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await port.open({ baudRate: 115200 });
+        this.port = port;
+        this.reader = port.readable.getReader();
+        this.reading = this.readLoop();
+        const reply = await this.request(`${this.app}_hello`, {}, 8000);
+        if (reply.protocol !== `${this.app}/v1` || !reply.cert || (version && reply.appVersion !== version)) {
+          throw Object.assign(new Error(`Install the updated ${this.app} Wedgie app, then reconnect.`), { installRequired: true });
+        }
+        this.cert = reply.cert;
+        this.canCancel = reply.cancel === true;
+        return;
+      } catch (error) {
+        await this.disconnect();
+        const missing = error.installRequired || /unknown type|unknown request|not handled/i.test(error.message);
+        if (missing && install && attempt === 0) { await install(port); continue; }
+        if (missing) throw new Error(`Install the ${this.app} app on your Wedgie first, then reconnect. Its current app is missing or outdated.`);
+        throw error;
       }
-      throw error;
     }
   }
 
