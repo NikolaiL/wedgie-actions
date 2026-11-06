@@ -84,7 +84,7 @@ export class WedgieSigner extends EventTarget {
   async request(type, fields = {}, timeout = 75_000) {
     if (!this.port?.writable) throw new Error('Connect your Wedgie first.');
     const active = [...this.pending.values()];
-    if (active.length && !(type === `${this.app}_cancel` && active.length === 1 && active[0].type === `${this.app}_sign`)) throw new Error('Finish the current device request first.');
+    if (active.length && !(type === `${this.app}_cancel` && active.length === 1 && [`${this.app}_sign`, `${this.app}_airdrop`].includes(active[0].type))) throw new Error('Finish the current device request first.');
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('Device timed out. Reconnect it before trying again.')); }, timeout);
@@ -106,8 +106,8 @@ export class WedgieSigner extends EventTarget {
     return { r: reply.r, s: reply.s };
   }
 
-  async cancelAction() {
-    const active = [...this.pending.entries()].find(([, pending]) => pending.type === `${this.app}_sign`);
+  async cancelAction(type = `${this.app}_sign`) {
+    const active = [...this.pending.entries()].find(([, pending]) => pending.type === type);
     if (!active) return false;
     if (!this.canCancel) throw new Error('Reinstall the updated Wedgie app to cancel its screen from the browser.');
     const reply = await this.request(`${this.app}_cancel`, { request: active[0] }, 5000);

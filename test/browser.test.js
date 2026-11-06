@@ -84,6 +84,9 @@ test('browser cancellation reaches the pending device request and a late proof c
   await signer.writing;
   reply({ id: writes.at(-1).id, type: 'airlock_signature', r: 'new', s: 'new' });
   assert.deepEqual(await next, { r: 'new', s: 'new' });
+  const claim = assert.rejects(signer.request('airlock_airdrop', { text: 'claim' }), /Declined/);
+  assert.equal(await signer.cancelAction('airlock_airdrop'), true);
+  await claim;
   await signer.disconnect();
 });
 
